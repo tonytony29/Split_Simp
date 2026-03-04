@@ -42,29 +42,40 @@
 
         <div class="modal-body">
             <form id="expenseForm">
-                <div class="input-group">
-                    <label for="payer">Who paid?</label>
-                    <select id="payer" class="form-control">
-                        <option value="user1">You</option>
-                        <option value="user2">Alice</option>
-                        <option value="user3">Bob</option>
-                    </select>
-                    
-                    <div class="input-group split-group">
-                    <label>Split among</label>
-                    <div class="member-list" id="splitMemberList">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="input-group amount-group">
-                    <span class="currency-symbol">$</span>
-                    <input type="number" id="amount" class="form-control amount-input" placeholder="0.00" step="0.01" required>
-                </div>
 
                 <div class="input-group">
                     <label for="description">For what?</label>
                     <input type="text" id="description" class="form-control" placeholder="e.g. Dinner, Taxi..." required>
+                </div>
+
+                <div class="input-group">
+                    <div class="input-group payers-group">
+                    <label>Who paid & How much?</label>
+                    <div class="payers-summary" id="payersSummary">Total Paid: $0.00 ▼</div>
+                    <div class="payers-list hidden" id="payersList">
+                        </div>
+                </div>
+
+                <div class="input-group blocks-container">
+                    <div class="blocks-header">
+                        <label>Split Details</label>
+                        <span id="blockCount" class="block-count">1/8</span>
+                    </div>
+                    <div id="splitBlocksWrapper">
+                        <div class="split-block" data-block-id="1">
+                            <div class="block-top">
+                                <input type="text" class="form-control block-name-input" placeholder="Item name (optional)">
+                                <select class="form-control block-mode-select">
+                                    <option value="shares">By Shares</option>
+                                    <option value="amount">By Amount</option>
+                                </select>
+                                <button type="button" class="icon-btn delete-block-btn hidden">&times;</button>
+                            </div>
+                            <div class="block-members"></div>
+                        </div>
+                    </div>
+                    <button type="button" id="addBlockBtn" class="text-btn add-block-btn">+ Add Block</button>
+                    </div>
                 </div>
 
                 <div class="input-group">

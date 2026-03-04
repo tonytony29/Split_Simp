@@ -55,24 +55,141 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderSplitMembers() {
-        splitMemberList.innerHTML = '';
+    // --- Core Functions for Split Blocks ---
+    let blockCounter = 1;
+    const MAX_BLOCKS = 8;
+    const splitBlocksWrapper = document.getElementById('splitBlocksWrapper');
+    const blockCountDisplay = document.getElementById('blockCount');
+    const addBlockBtn = document.getElementById('addBlockBtn');
+
+    // Function to render members inside a specific block based on its mode
+    function renderMembersInBlock(blockElement) {
+        const membersContainer = blockElement.querySelector('.block-members');
+        const mode = blockElement.querySelector('.block-mode-select').value;
+        membersContainer.innerHTML = ''; // Clear previous
+
         groupMembers.forEach(member => {
             const div = document.createElement('div');
-            div.className = 'member-item selected'; 
+            // By default, members in the first block are selected. New blocks are unselected.
+            const isFirstBlock = blockElement.dataset.blockId === '1';
+            div.className = `member-item ${isFirstBlock ? 'selected' : ''}`;
             div.dataset.id = member.id;
+
+            // Generate different input based on mode
+            let rightSideHTML = '';
+            if (mode === 'shares') {
+                rightSideHTML = `
+                    <div class="member-input-wrapper">
+                        <input type="number" class="member-val-input shares-input" value="1" min="1" step="1" ${isFirstBlock ? '' : 'disabled'}>
+                        <div class="checkbox"></div>
+                    </div>
+                `;
+            } else if (mode === 'amount') {
+                rightSideHTML = `
+                    <div class="member-input-wrapper">
+                        <span class="currency-symbol" style="font-size: 1rem; margin-right: 0;">$</span>
+                        <input type="number" class="member-val-input amount-input" placeholder="0.00" step="0.01" ${isFirstBlock ? '' : 'disabled'}>
+                        <div class="checkbox"></div>
+                    </div>
+                `;
+            }
+
             div.innerHTML = `
                 <div class="member-info">
                     <div class="avatar">${member.avatar}</div>
                     <span>${member.name}</span>
                 </div>
-                <div class="checkbox"></div>
+                ${rightSideHTML}
             `;
-            div.addEventListener('click', () => {
-                div.classList.toggle('selected');
+
+            // Toggle logic: enable/disable input when checking/unchecking
+            div.addEventListener('click', (e) => {
+                // Don't toggle if clicking directly on the input field
+                if (e.target.tagName === 'INPUT') return;
+
+                const isSelected = div.classList.toggle('selected');
+                const inputField = div.querySelector('.member-val-input');
+                if (inputField) {
+                    inputField.disabled = !isSelected;
+                    // Auto focus if it's an amount input
+                    if (isSelected && mode === 'amount') {
+                        inputField.focus();
+                    }
+                }
             });
-            splitMemberList.appendChild(div);
+
+            membersContainer.appendChild(div);
         });
+    }
+
+    // Function to initialize an existing block (attach event listeners)
+    function initBlock(blockElement) {
+        const modeSelect = blockElement.querySelector('.block-mode-select');
+        const deleteBtn = blockElement.querySelector('.delete-block-btn');
+
+        // Re-render members when mode changes (Shares <-> Amount)
+        modeSelect.addEventListener('change', () => {
+            renderMembersInBlock(blockElement);
+        });
+
+        // Delete block logic
+        deleteBtn.addEventListener('click', () => {
+            blockElement.remove();
+            blockCounter--;
+            updateBlockCountUI();
+        });
+
+        // Initial render for this block
+        renderMembersInBlock(blockElement);
+    }
+
+    // Function to update the "1/8" counter and disable add button if max reached
+    function updateBlockCountUI() {
+        blockCountDisplay.textContent = `${blockCounter}/${MAX_BLOCKS}`;
+        if (blockCounter >= MAX_BLOCKS) {
+            addBlockBtn.disabled = true;
+            addBlockBtn.style.opacity = '0.5';
+            addBlockBtn.style.cursor = 'not-allowed';
+        } else {
+            addBlockBtn.disabled = false;
+            addBlockBtn.style.opacity = '1';
+            addBlockBtn.style.cursor = 'pointer';
+        }
+    }
+
+    // Event Listener for Add Block button
+    addBlockBtn.addEventListener('click', () => {
+        if (blockCounter >= MAX_BLOCKS) return;
+        
+        blockCounter++;
+        const newBlockId = Date.now().toString(); // Use timestamp as unique ID
+        
+        const newBlock = document.createElement('div');
+        newBlock.className = 'split-block';
+        newBlock.dataset.blockId = newBlockId;
+        newBlock.innerHTML = `
+            <div class="block-top">
+                <input type="text" class="form-control block-name-input" placeholder="Item name (optional)">
+                <select class="form-control block-mode-select">
+                    <option value="shares">By Shares</option>
+                    <option value="amount">By Amount</option>
+                </select>
+                <button type="button" class="icon-btn delete-block-btn">&times;</button>
+            </div>
+            <div class="block-members"></div>
+        `;
+        
+        splitBlocksWrapper.appendChild(newBlock);
+        initBlock(newBlock);
+        updateBlockCountUI();
+    });
+
+    function renderSplitMembers() {
+        const firstBlock = document.querySelector('.split-block[data-block-id="1"]');
+        if (firstBlock) {
+            initBlock(firstBlock);
+            updateBlockCountUI();
+        }
     }
 
     function updateBalanceCard() {
@@ -107,13 +224,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetForm() {
         currentEditingId = null;
-        modalTitle.textContent = 'Add Expense';
-        deleteExpenseBtn.classList.add('hidden');
-        amountInput.value = '';
-        descInput.value = '';
-        dateInput.value = new Date().toISOString().split('T')[0];
-        payerSelect.selectedIndex = 0;
-        document.querySelectorAll('.member-item').forEach(el => el.classList.add('selected'));
+        document.getElementById('modalTitle').textContent = 'Add Expense';
+        
+        const deleteBtn = document.getElementById('deleteExpenseBtn');
+        if (deleteBtn) deleteBtn.classList.add('hidden');
+        
+        // Reset Description and Date
+        document.getElementById('description').value = '';
+        document.getElementById('date').value = new Date().toISOString().split('T')[0];
+        
+        // Reset Payers Section
+        document.querySelectorAll('#payersList .member-item').forEach(el => {
+            el.classList.remove('selected');
+            const input = el.querySelector('.payer-amount-input');
+            if (input) {
+                input.value = '';
+                input.disabled = true;
+            }
+        });
+        document.getElementById('payersSummary').textContent = 'Total Paid: $0.00 ▼';
+        document.getElementById('payersList').classList.add('hidden');
+        
+        // Reset Blocks Section
+        const allBlocks = document.querySelectorAll('.split-block');
+        allBlocks.forEach((block, index) => {
+            if (index === 0) {
+                // Reset the first block to default
+                const nameInput = block.querySelector('.block-name-input');
+                if (nameInput) nameInput.value = '';
+                
+                const modeSelect = block.querySelector('.block-mode-select');
+                if (modeSelect) {
+                    modeSelect.value = 'shares';
+                    // Trigger change event to re-render members
+                    modeSelect.dispatchEvent(new Event('change')); 
+                }
+            } else {
+                // Remove any extra blocks added previously
+                block.remove();
+            }
+        });
+        
+        blockCounter = 1;
+        if (typeof updateBlockCountUI === 'function') {
+            updateBlockCountUI();
+        }
     }
 
     function openEditModal(exp) {
@@ -143,6 +298,84 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         expenseModal.classList.remove('hidden');
+    }
+
+    // --- Payers Logic ---
+    const payersSummary = document.getElementById('payersSummary');
+    const payersList = document.getElementById('payersList');
+
+    // Toggle payers list visibility
+    payersSummary.addEventListener('click', () => {
+        payersList.classList.toggle('hidden');
+    });
+
+    function updateTotalPaid() {
+        const payerItems = document.querySelectorAll('#payersList .member-item');
+        let total = 0;
+        let activePayers = []; // 用來收集有付款的人名
+
+        payerItems.forEach(item => {
+            const input = item.querySelector('.payer-amount-input');
+            if (!input.disabled && input.value && parseFloat(input.value) > 0) {
+                total += parseFloat(input.value);
+                // 抓取該 input 對應的成員名字
+                const memberName = item.querySelector('.member-info span').textContent;
+                activePayers.push(memberName);
+            }
+        });
+
+        const payersSummary = document.getElementById('payersSummary');
+        
+        // 判斷顯示邏輯
+        if (activePayers.length === 1) {
+            payersSummary.textContent = `${activePayers[0]} Paid: $${total.toFixed(2)} ▼`;
+        } else {
+            payersSummary.textContent = `Total Paid: $${total.toFixed(2)} ▼`;
+        }
+    }
+
+    function renderPayers() {
+        payersList.innerHTML = '';
+        groupMembers.forEach(member => {
+            const div = document.createElement('div');
+            div.className = 'member-item'; // Default unselected
+            div.dataset.id = member.id;
+            
+            div.innerHTML = `
+                <div class="member-info">
+                    <div class="avatar">${member.avatar}</div>
+                    <span>${member.name}</span>
+                </div>
+                <div class="member-input-wrapper">
+                    <span class="currency-symbol" style="font-size: 1rem; margin-right: 0;">$</span>
+                    <input type="number" class="member-val-input payer-amount-input" placeholder="0.00" step="0.01" disabled>
+                    <div class="checkbox"></div>
+                </div>
+            `;
+
+            // Checkbox toggle logic
+            div.addEventListener('click', (e) => {
+                if (e.target.tagName === 'INPUT') return;
+
+                const isSelected = div.classList.toggle('selected');
+                const inputField = div.querySelector('.payer-amount-input');
+                
+                if (isSelected) {
+                    inputField.disabled = false;
+                    inputField.focus();
+                } else {
+                    inputField.disabled = true;
+                    inputField.value = ''; // Clear value to 0 when unselected
+                    updateTotalPaid();
+                }
+            });
+
+            // Update total on type
+            const inputField = div.querySelector('.payer-amount-input');
+            inputField.addEventListener('input', updateTotalPaid);
+
+            payersList.appendChild(div);
+        });
     }
 
     // --- Event Listeners ---
@@ -210,6 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initialize ---
     renderSplitMembers();
+    renderPayers();
     renderExpenses();
     updateBalanceCard();
 });

@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     ];
 
-    const groupMembers = [
+    const members = [
         { id: 'u1', name: 'You', avatar: 'Y' },
         { id: 'u2', name: 'Alice', avatar: 'A' },
         { id: 'u3', name: 'Bob', avatar: 'B' }
@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const mode = blockElement.querySelector('.block-mode-select').value;
         membersContainer.innerHTML = ''; // Clear previous
 
-        groupMembers.forEach(member => {
+        members.forEach(member => {
             const div = document.createElement('div');
             // By default, members in the first block are selected. New blocks are unselected.
             const isFirstBlock = blockElement.dataset.blockId === '1';
@@ -353,60 +353,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function resetForm() {
-        // --- 1. Basic Info Reset ---
-        currentEditingId = null;
-        document.getElementById('modalTitle').textContent = 'Add Expense';
-        
-        const deleteBtn = document.getElementById('deleteExpenseBtn');
-        if (deleteBtn) deleteBtn.classList.add('hidden');
-        
-        document.getElementById('description').value = '';
-        document.getElementById('date').value = new Date().toISOString().split('T')[0];
-        
-        // --- 2. Global State Reset (Crucial for the new architecture) ---
-        globalTotalAmount = 0;
-        payersState.forEach(p => {
-            p.amount = 0;
-            p.isManual = false;
-            p.isChecked = true; 
-            p.editTime = 0;
-        });
-        
-        // --- 3. Payers UI Reset ---
-        updatePayersUI(); // Let our unified function handle the DOM inputs
-        document.getElementById('payersSummary').textContent = 'Total Paid: $0.00 ▼';
-        document.getElementById('payersList').classList.add('hidden');
-        
-        // --- 4. Blocks Reset ---
-        const allBlocks = document.querySelectorAll('.split-block');
-        allBlocks.forEach((block, index) => {
-            if (index === 0) {
-                // Reset the first block to default
-                const nameInput = block.querySelector('.block-name-input');
-                if (nameInput) nameInput.value = '';
-                
-                // Clear the block total amount
-                const amtInput = block.querySelector('.block-amount-input');
-                if (amtInput) amtInput.value = '';
-
-                const modeSelect = block.querySelector('.block-mode-select');
-                if (modeSelect) {
-                    modeSelect.value = 'shares';
-                    modeSelect.dispatchEvent(new Event('change')); 
-                }
-            } else {
-                // Remove any extra blocks added previously
-                block.remove();
-            }
-        });
-        
-        blockCounter = 1;
-        if (typeof updateBlockCountUI === 'function') {
-            updateBlockCountUI();
-        }
-    }
-
     // --- Payers Logic ---
     const payersSummary = document.getElementById('payersSummary');
     const payersList = document.getElementById('payersList');
@@ -422,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
         payersList.innerHTML = '';
         if (payersState.length === 0) initPayersState();
 
-        groupMembers.forEach(member => {
+        members.forEach(member => {
             const div = document.createElement('div');
             div.className = 'member-item';
             div.dataset.id = member.id;
@@ -482,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initPayersState() {
-        payersState = groupMembers.map(member => ({
+        payersState = members.map(member => ({
             id: member.id,
             amount: 0,
             isManual: false,
@@ -793,14 +739,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const deleteBtn = document.getElementById('deleteExpenseBtn');
         if (deleteBtn) deleteBtn.classList.add('hidden');
         
-        // Clear the main description input
+        // Clear description and reset date
         const descInput = document.getElementById('description');
         if (descInput) descInput.value = '';
         
         const dateInput = document.getElementById('date');
         if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
         
-        // --- 2. Global State Reset ---
+        // --- 2. Global State Reset (Crucial for the new architecture) ---
         globalTotalAmount = 0;
         payersState.forEach(p => {
             p.amount = 0;
@@ -810,9 +756,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         // --- 3. Payers UI Reset ---
-        updatePayersUI(); 
-        document.getElementById('payersSummary').textContent = 'Total Paid: $0.00 ▼';
-        document.getElementById('payersList').classList.add('hidden');
+        updatePayersUI(); // This will refresh the DOM inputs based on payersState
+        const summary = document.getElementById('payersSummary');
+        if (summary) summary.textContent = 'Total Paid: $0.00 ▼';
+        
+        const payersList = document.getElementById('payersList');
+        if (payersList) payersList.classList.add('hidden');
         
         // --- 4. Blocks Reset ---
         const allBlocks = document.querySelectorAll('.split-block');
@@ -963,10 +912,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     deleteExpenseBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete this expense?')) {
-            expenses = expenses.filter(e => e.id !== currentEditingId);
-            renderExpenses();
-            updateBalanceCard();
+        console.log("Deleting ID:", currentEditingId);
+        console.log("Current Database:", expenses);
+        if (currentEditingId) {
+            // Directly call the unified function
+            deleteExpense(currentEditingId);
+        } else {
+            // Safety check: if somehow delete is clicked without an ID
+            console.warn("No expense ID found to delete.");
             expenseModal.classList.add('hidden');
         }
     });

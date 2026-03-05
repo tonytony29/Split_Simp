@@ -20,6 +20,9 @@ body {
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     line-height: 1.6;
+    min-height: 100vh;
+    height: auto;
+    overflow-y: auto;
 }
 
 header {
@@ -178,6 +181,8 @@ main {
 .modal-body {
     padding: 1.5rem;
     flex-grow: 1;
+    overflow-y: auto;
+    padding-bottom: 120px;
 }
 
 /* Form Styles */
@@ -488,4 +493,9 @@ main {
     flex: 1;
     min-width: 150px;
     font-size: 0.95rem;
+}
+
+/* Enable scrolling for the split blocks container */
+#splitBlocksWrapper {
+    margin-bottom: 1rem;
 }

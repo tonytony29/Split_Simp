@@ -65,13 +65,18 @@
                         <div class="split-block" data-block-id="1">
                             <div class="block-top">
                                 <input type="text" class="form-control block-name-input" placeholder="Item name (optional)">
+                                
+                                <input type="number" class="form-control block-amount-input" placeholder="Total $" style="width: 80px;">
+                                
                                 <select class="form-control block-mode-select">
                                     <option value="shares">By Shares</option>
                                     <option value="amount">By Amount</option>
                                 </select>
                                 <button type="button" class="icon-btn delete-block-btn hidden">&times;</button>
                             </div>
-                            <div class="block-members"></div>
+                            
+                            <div class="block-members">
+                                </div>
                         </div>
                     </div>
                     <button type="button" id="addBlockBtn" class="text-btn add-block-btn">+ Add Block</button>

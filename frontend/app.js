@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 rightSideHTML = `
                     <div class="member-input-wrapper">
                         <input type="number" class="member-val-input shares-input" value="1" min="1" step="1" ${isFirstBlock ? '' : 'disabled'}>
+                        <span class="calculated-amount" style="font-size: 0.85rem; color: var(--text-secondary); min-width: 50px; text-align: right; margin-right: 8px;">$0.00</span>
                         <div class="checkbox"></div>
                     </div>
                 `;
@@ -104,19 +105,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Toggle logic: enable/disable input when checking/unchecking
             div.addEventListener('click', (e) => {
-                // Don't toggle if clicking directly on the input field
                 if (e.target.tagName === 'INPUT') return;
 
                 const isSelected = div.classList.toggle('selected');
                 const inputField = div.querySelector('.member-val-input');
+                
                 if (inputField) {
                     inputField.disabled = !isSelected;
-                    // Auto focus if it's an amount input
-                    if (isSelected && mode === 'amount') {
-                        inputField.focus();
+                    
+                    if (!isSelected) {
+                        // Reset when unchecked
+                        inputField.value = '';
+                        
+                        // Explicitly unmark manual status so it can become a sponge again if re-checked
+                        if (inputField.classList.contains('amount-input')) {
+                            inputField.dataset.manual = 'false';
+                        }
+                    } else {
+                        // When re-checked, restore default behavior based on mode
+                        const currentMode = blockElement.querySelector('.block-mode-select').value;
+                        if (currentMode === 'shares' && inputField.value === '') {
+                            // Restore default share weight
+                            inputField.value = '1';
+                        } else if (currentMode === 'amount') {
+                            inputField.focus();
+                        }
                     }
                 }
+                
+                distributeBlockAmount(blockElement);
+                syncGlobalTotal('blocks');
             });
+
+            const inputField = div.querySelector('.member-val-input');
+            if (inputField) {
+                inputField.addEventListener('input', (e) => {
+                    // Mark as manually edited if user explicitly types an amount
+                    if (inputField.classList.contains('amount-input')) {
+                        inputField.dataset.manual = 'true';
+                    }
+                    
+                    distributeBlockAmount(blockElement);
+                    syncGlobalTotal('blocks');
+                });
+            }
 
             membersContainer.appendChild(div);
         });
@@ -126,20 +158,42 @@ document.addEventListener('DOMContentLoaded', () => {
     function initBlock(blockElement) {
         const modeSelect = blockElement.querySelector('.block-mode-select');
         const deleteBtn = blockElement.querySelector('.delete-block-btn');
+        const blockAmountInput = blockElement.querySelector('.block-amount-input');
 
-        // Re-render members when mode changes (Shares <-> Amount)
+        // Handle mode change
         modeSelect.addEventListener('change', () => {
+            // 1. Keep the current block total before doing anything
+            const currentBlockTotal = blockAmountInput ? blockAmountInput.value : 0;
+            
+            // 2. Re-render the members (which resets their inputs)
             renderMembersInBlock(blockElement);
+            
+            // 3. If switching to 'amount', immediately distribute the total to the empty inputs
+            if (modeSelect.value === 'amount') {
+                if (blockAmountInput) blockAmountInput.value = currentBlockTotal;
+                distributeBlockAmount(blockElement);
+            }
+            
+            // 4. Now it's safe to calculate the grand total without getting 0
+            calculateGrandTotal(); 
         });
 
-        // Delete block logic
+        // Handle block amount input changes
+        if (blockAmountInput) {
+            blockAmountInput.addEventListener('input', () => {
+                distributeBlockAmount(blockElement); // Update members inside
+                syncGlobalTotal('blocks');           // Push total up to payers
+            });
+        }
+
+        // Handle block deletion
         deleteBtn.addEventListener('click', () => {
             blockElement.remove();
             blockCounter--;
             updateBlockCountUI();
+            calculateGrandTotal(); // Recalculate after deleting a block
         });
 
-        // Initial render for this block
         renderMembersInBlock(blockElement);
     }
 
@@ -162,14 +216,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (blockCounter >= MAX_BLOCKS) return;
         
         blockCounter++;
-        const newBlockId = Date.now().toString(); // Use timestamp as unique ID
+        const newBlockId = Date.now().toString(); 
         
         const newBlock = document.createElement('div');
         newBlock.className = 'split-block';
         newBlock.dataset.blockId = newBlockId;
+        
+        // Added the block-amount-input field
         newBlock.innerHTML = `
             <div class="block-top">
-                <input type="text" class="form-control block-name-input" placeholder="Item name (optional)">
+                <input type="text" class="form-control block-name-input" placeholder="Item name">
+                <input type="number" class="form-control block-amount-input" placeholder="Total $" style="width: 80px;">
                 <select class="form-control block-mode-select">
                     <option value="shares">By Shares</option>
                     <option value="amount">By Amount</option>
@@ -303,42 +360,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Payers Logic ---
     const payersSummary = document.getElementById('payersSummary');
     const payersList = document.getElementById('payersList');
+    let globalTotalAmount = 1000; // For testing, will be dynamically updated by Blocks later
+    let payersState = [];
 
     // Toggle payers list visibility
     payersSummary.addEventListener('click', () => {
         payersList.classList.toggle('hidden');
     });
 
-    function updateTotalPaid() {
-        const payerItems = document.querySelectorAll('#payersList .member-item');
-        let total = 0;
-        let activePayers = []; // 用來收集有付款的人名
-
-        payerItems.forEach(item => {
-            const input = item.querySelector('.payer-amount-input');
-            if (!input.disabled && input.value && parseFloat(input.value) > 0) {
-                total += parseFloat(input.value);
-                // 抓取該 input 對應的成員名字
-                const memberName = item.querySelector('.member-info span').textContent;
-                activePayers.push(memberName);
-            }
-        });
-
-        const payersSummary = document.getElementById('payersSummary');
-        
-        // 判斷顯示邏輯
-        if (activePayers.length === 1) {
-            payersSummary.textContent = `${activePayers[0]} Paid: $${total.toFixed(2)} ▼`;
-        } else {
-            payersSummary.textContent = `Total Paid: $${total.toFixed(2)} ▼`;
-        }
-    }
-
     function renderPayers() {
         payersList.innerHTML = '';
+        if (payersState.length === 0) initPayersState();
+
         groupMembers.forEach(member => {
             const div = document.createElement('div');
-            div.className = 'member-item'; // Default unselected
+            div.className = 'member-item';
             div.dataset.id = member.id;
             
             div.innerHTML = `
@@ -353,29 +389,277 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // Checkbox toggle logic
+            // 1. Handle Checkbox / Row Click
             div.addEventListener('click', (e) => {
                 if (e.target.tagName === 'INPUT') return;
 
-                const isSelected = div.classList.toggle('selected');
-                const inputField = div.querySelector('.payer-amount-input');
-                
-                if (isSelected) {
-                    inputField.disabled = false;
-                    inputField.focus();
+                const state = payersState.find(p => p.id === member.id);
+                state.isChecked = !state.isChecked;
+
+                if (!state.isChecked) {
+                    state.amount = 0;
+                    state.isManual = false;
+                    state.editTime = null;
                 } else {
-                    inputField.disabled = true;
-                    inputField.value = ''; // Clear value to 0 when unselected
-                    updateTotalPaid();
+                    state.isManual = false; // Join as auto-calculated initially
+                    state.editTime = Date.now();
                 }
+
+                recalculatePayers('payers');
+                updatePayersUI();
+                syncGlobalTotal('payers');
             });
 
-            // Update total on type
+            // 2. Handle Amount Input
             const inputField = div.querySelector('.payer-amount-input');
-            inputField.addEventListener('input', updateTotalPaid);
+            inputField.addEventListener('input', (e) => {
+                const state = payersState.find(p => p.id === member.id);
+                let val = parseFloat(e.target.value);
+                
+                if (isNaN(val) || val < 0) val = 0;
+                
+                state.amount = val;
+                state.isManual = true; 
+                state.editTime = Date.now();
+
+                recalculatePayers('payers');
+                updatePayersUI();
+                syncGlobalTotal('payers');
+            });
 
             payersList.appendChild(div);
         });
+    }
+
+    function initPayersState() {
+        payersState = groupMembers.map(member => ({
+            id: member.id,
+            amount: 0,
+            isManual: false,
+            editTime: null,
+            isChecked: false // Unchecked by default
+        }));
+    }
+
+    function recalculatePayers(source = 'system') {
+        let checkedPayers = payersState.filter(p => p.isChecked);
+        if (checkedPayers.length === 0) return;
+
+        let manualPayers = checkedPayers.filter(p => p.isManual);
+        let manualSum = manualPayers.reduce((sum, p) => sum + p.amount, 0);
+
+        if (source === 'payers') {
+            // When user is explicitly typing, the total should grow to accommodate inputs
+            if (manualSum > globalTotalAmount) globalTotalAmount = manualSum;
+            // If everyone is manually typed, the total is exactly their sum
+            if (manualPayers.length === checkedPayers.length) globalTotalAmount = manualSum;
+        } else {
+            // When syncing from blocks, strict fail-safe applies to fit the fixed globalTotalAmount
+            if (manualPayers.length === checkedPayers.length && checkedPayers.length > 1 && globalTotalAmount !== manualSum) {
+                let oldestPayer = manualPayers.reduce((prev, curr) => 
+                    (prev.editTime < curr.editTime) ? prev : curr
+                );
+                oldestPayer.isManual = false;
+                manualPayers = checkedPayers.filter(p => p.isManual);
+                manualSum = manualPayers.reduce((sum, p) => sum + p.amount, 0);
+            }
+        }
+
+        let autoPayers = checkedPayers.filter(p => !p.isManual);
+        if (autoPayers.length > 0) {
+            let remaining = Math.max(0, globalTotalAmount - manualSum);
+            let autoAmount = remaining / autoPayers.length;
+            autoPayers.forEach(p => {
+                p.amount = autoAmount;
+            });
+        }
+    }
+
+    function calculateGrandTotal() {
+        let newTotal = 0;
+        const blocks = document.querySelectorAll('.split-block');
+        
+        blocks.forEach(block => {
+            const mode = block.querySelector('.block-mode-select').value;
+            
+            if (mode === 'shares') {
+                const blockAmtInput = block.querySelector('.block-amount-input');
+                const blockTotal = parseFloat(blockAmtInput ? blockAmtInput.value : 0) || 0;
+                newTotal += blockTotal;
+
+                // Calculate total shares for active members
+                const activeMembers = Array.from(block.querySelectorAll('.member-item.selected'));
+                let totalShares = 0;
+                activeMembers.forEach(item => {
+                    const shareInput = item.querySelector('.shares-input');
+                    if (shareInput) {
+                        totalShares += parseFloat(shareInput.value) || 0;
+                    }
+                });
+
+                // Update UI for active members
+                activeMembers.forEach(item => {
+                    const shareInput = item.querySelector('.shares-input');
+                    const calcSpan = item.querySelector('.calculated-amount');
+                    if (calcSpan && totalShares > 0 && shareInput) {
+                        const shares = parseFloat(shareInput.value) || 0;
+                        const memberAmt = blockTotal * (shares / totalShares);
+                        calcSpan.textContent = `$${memberAmt.toFixed(2)}`;
+                    } else if (calcSpan) {
+                        calcSpan.textContent = `$0.00`;
+                    }
+                });
+
+                // Reset UI for inactive members
+                const inactiveMembers = Array.from(block.querySelectorAll('.member-item:not(.selected)'));
+                inactiveMembers.forEach(item => {
+                    const calcSpan = item.querySelector('.calculated-amount');
+                    if (calcSpan) calcSpan.textContent = `$0.00`;
+                });
+            } else if (mode === 'amount') {
+                // For 'By Amount', sum up the individual member inputs
+                const memberInputs = block.querySelectorAll('.amount-input');
+                memberInputs.forEach(input => {
+                    if (!input.disabled) {
+                        newTotal += (parseFloat(input.value) || 0);
+                    }
+                });
+            }
+        });
+
+        // 1. Update the global total amount
+        globalTotalAmount = newTotal;
+        
+        // 2. Trigger recalculation and update the Payers UI
+        recalculatePayers();
+        updatePayersUI();
+        syncGlobalTotal('payers');
+    }
+
+    function updatePayersUI() {
+        const payerItems = document.querySelectorAll('#payersList .member-item');
+        let total = 0;
+        let activePayers = [];
+
+        payerItems.forEach(item => {
+            const id = item.dataset.id;
+            const state = payersState.find(p => p.id === id);
+            const input = item.querySelector('.payer-amount-input');
+            const memberName = item.querySelector('.member-info span').textContent;
+
+            if (state.isChecked) {
+                item.classList.add('selected');
+                input.disabled = false;
+                
+                // Only overwrite the input value if it's auto-calculated
+                // (Prevents cursor jumping while user is typing manually)
+                if (!state.isManual) {
+                    input.value = state.amount > 0 ? state.amount.toFixed(2) : '';
+                }
+                
+                if (state.amount > 0) {
+                    total += state.amount;
+                    activePayers.push(memberName);
+                }
+            } else {
+                item.classList.remove('selected');
+                input.disabled = true;
+                input.value = '';
+            }
+        });
+
+        // Update Summary Text
+        const payersSummary = document.getElementById('payersSummary');
+        if (activePayers.length === 1) {
+            payersSummary.textContent = `${activePayers[0]} Paid: $${total.toFixed(2)} ▼`;
+        } else {
+            payersSummary.textContent = `Total Paid: $${total.toFixed(2)} ▼`;
+        }
+    }
+
+    function syncGlobalTotal(source) {
+        if (source === 'blocks') {
+            // Blocks triggered the change -> Update total and sync Payers
+            let newTotal = 0;
+            const blocks = document.querySelectorAll('.split-block');
+            
+            blocks.forEach(block => {
+                const mode = block.querySelector('.block-mode-select').value;
+                if (mode === 'shares') {
+                    const blockAmtInput = block.querySelector('.block-amount-input');
+                    newTotal += (parseFloat(blockAmtInput?.value) || 0);
+                } else if (mode === 'amount') {
+                    const memberInputs = block.querySelectorAll('.amount-input');
+                    memberInputs.forEach(input => {
+                        if (!input.disabled) newTotal += (parseFloat(input.value) || 0);
+                    });
+                }
+            });
+
+            globalTotalAmount = newTotal;
+            recalculatePayers();
+            updatePayersUI();
+            syncGlobalTotal('payers');
+
+        } else if (source === 'payers') {
+            let newTotal = payersState.reduce((sum, p) => sum + (p.amount || 0), 0);
+            globalTotalAmount = newTotal;
+            
+            const blocks = document.querySelectorAll('.split-block');
+            if (blocks.length === 1) {
+                const blockAmtInput = blocks[0].querySelector('.block-amount-input');
+                if (blockAmtInput) {
+                    blockAmtInput.value = globalTotalAmount.toFixed(2);
+                    // Force the internal distribution to update members
+                    distributeBlockAmount(blocks[0]); 
+                }
+            }
+        }
+    }
+
+    function distributeBlockAmount(blockElement) {
+        const mode = blockElement.querySelector('.block-mode-select').value;
+        const blockAmtInput = blockElement.querySelector('.block-amount-input');
+        const blockTotal = parseFloat(blockAmtInput ? blockAmtInput.value : 0) || 0;
+        const activeMembers = Array.from(blockElement.querySelectorAll('.member-item.selected'));
+
+        if (mode === 'shares') {
+            let totalShares = 0;
+            activeMembers.forEach(item => {
+                const shareInput = item.querySelector('.shares-input');
+                if (shareInput) totalShares += parseFloat(shareInput.value) || 0;
+            });
+
+            activeMembers.forEach(item => {
+                const shareInput = item.querySelector('.shares-input');
+                const calcSpan = item.querySelector('.calculated-amount');
+                if (calcSpan && totalShares > 0 && shareInput) {
+                    const shares = parseFloat(shareInput.value) || 0;
+                    const memberAmt = blockTotal * (shares / totalShares);
+                    calcSpan.textContent = `$${memberAmt.toFixed(2)}`;
+                }
+            });
+        } else if (mode === 'amount') {
+            let manualSum = 0;
+            let autoMembers = [];
+
+            activeMembers.forEach(item => {
+                const input = item.querySelector('.amount-input');
+                if (input && input.dataset.manual === 'true') {
+                    manualSum += parseFloat(input.value) || 0;
+                } else if (input) {
+                    autoMembers.push(input);
+                }
+            });
+
+            if (autoMembers.length > 0) {
+                const remaining = Math.max(0, blockTotal - manualSum);
+                const autoAmt = remaining / autoMembers.length;
+                autoMembers.forEach(input => {
+                    input.value = autoAmt > 0 ? autoAmt.toFixed(2) : '';
+                });
+            }
+        }
     }
 
     // --- Event Listeners ---

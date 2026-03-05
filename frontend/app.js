@@ -2,9 +2,49 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- State ---
     let expenses = [
-        { id: 'e1', description: 'Dinner', amount: 120.50, date: '2026-03-01', payer: 'Alice', splitAmong: ['u1', 'u2', 'u3'] },
-        { id: 'e2', description: 'Taxi', amount: 35.00, date: '2026-03-02', payer: 'You', splitAmong: ['u1', 'u2'] }
+        { 
+            id: 'e1', 
+            description: 'Dinner at Bistro', 
+            totalAmount: 120.50, 
+            date: '2026-03-01', 
+            payers: [
+                { id: 'u1', amount: 120.50 } // Alice paid all
+            ],
+            blocks: [
+                {
+                    name: 'Food & Drinks',
+                    mode: 'shares',
+                    total: 120.50,
+                    members: [
+                        { id: 'u1', amount: 40.17 },
+                        { id: 'u2', amount: 40.17 },
+                        { id: 'u3', amount: 40.16 }
+                    ]
+                }
+            ]
+        },
+        { 
+            id: 'e2', 
+            description: 'Taxi to Station', 
+            totalAmount: 35.00, 
+            date: '2026-03-02', 
+            payers: [
+                { id: 'u0', amount: 35.00 } // 'u0' assumes it's 'You'
+            ],
+            blocks: [
+                {
+                    name: 'Transportation',
+                    mode: 'shares',
+                    total: 35.00,
+                    members: [
+                        { id: 'u0', amount: 17.50 },
+                        { id: 'u1', amount: 17.50 }
+                    ]
+                }
+            ]
+        }
     ];
+
     const groupMembers = [
         { id: 'u1', name: 'You', avatar: 'Y' },
         { id: 'u2', name: 'Alice', avatar: 'A' },
@@ -30,26 +70,50 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Core Functions ---
 
     function renderExpenses() {
+        const expenseListContainer = document.getElementById('expenseList');
+        if (!expenseListContainer) return;
+
+        // 1. Clear current list
         expenseListContainer.innerHTML = '';
+
         if (expenses.length === 0) {
-            expenseListContainer.innerHTML = '<li class="empty-state">No expenses yet.</li>';
+            expenseListContainer.innerHTML = '<div class="empty-state">No expenses yet.</div>';
             return;
         }
 
+        // 2. Loop through expenses and render each
         expenses.forEach(exp => {
             const li = document.createElement('li');
             li.className = 'expense-item';
             li.dataset.id = exp.id;
+
+            const description = exp.description || 'Untitled Item';
+            const displayAmount = (exp.totalAmount || 0).toFixed(2);
+            
+            // Handle multiple payers display
+            // If there's only one payer, show their name. If multiple, show "X people"
+            let payerText = 'Unknown';
+            if (exp.payers && exp.payers.length > 0) {
+                if (exp.payers.length === 1) {
+                    const person = members.find(m => m.id === exp.payers[0].id);
+                    payerText = person ? person.name : 'Someone';
+                } else {
+                    payerText = `${exp.payers.length} people`;
+                }
+            } else if (exp.payer) {
+                payerText = exp.payer; // Fallback for old mock data
+            }
+
             li.innerHTML = `
                 <div class="expense-details">
-                    <h4>${exp.description}</h4>
-                    <span class="expense-date">${exp.date} • Paid by ${exp.payer}</span>
+                    <h4>${description}</h4>
+                    <span class="expense-date">${exp.date} • Paid by ${payerText}</span>
                 </div>
-                <div class="expense-amount">$${exp.amount.toFixed(2)}</div>
+                <div class="expense-amount">$${displayAmount}</div>
             `;
             
-            // Add click event for editing
-            li.addEventListener('click', () => openEditModal(exp));
+            // 3. Add click event - Note: we now only pass the ID to keep it consistent
+            li.addEventListener('click', () => openEditModal(exp.id));
             
             expenseListContainer.appendChild(li);
         });
@@ -57,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Core Functions for Split Blocks ---
     let blockCounter = 1;
-    const MAX_BLOCKS = 8;
+    const MAX_BLOCKS = 4;
     const splitBlocksWrapper = document.getElementById('splitBlocksWrapper');
     const blockCountDisplay = document.getElementById('blockCount');
     const addBlockBtn = document.getElementById('addBlockBtn');
@@ -154,6 +218,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function createSplitBlock() {
+    const newBlockId = Date.now().toString(); 
+    
+    const newBlock = document.createElement('div');
+    newBlock.className = 'split-block';
+    newBlock.dataset.blockId = newBlockId;
+    
+    newBlock.innerHTML = `
+        <div class="block-top">
+            <input type="text" class="form-control block-name-input" placeholder="Item name">
+            <input type="number" class="form-control block-amount-input" placeholder="Total $" style="width: 80px;">
+            <select class="form-control block-mode-select">
+                <option value="shares">By Shares</option>
+                <option value="amount">By Amount</option>
+            </select>
+            <button type="button" class="icon-btn delete-block-btn">&times;</button>
+        </div>
+        <div class="block-members"></div>
+    `;
+    
+    return newBlock;
+}
+    
     // Function to initialize an existing block (attach event listeners)
     function initBlock(blockElement) {
         const modeSelect = blockElement.querySelector('.block-mode-select');
@@ -197,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMembersInBlock(blockElement);
     }
 
-    // Function to update the "1/8" counter and disable add button if max reached
+    // Function to update the "1/4" counter and disable add button if max reached
     function updateBlockCountUI() {
         blockCountDisplay.textContent = `${blockCounter}/${MAX_BLOCKS}`;
         if (blockCounter >= MAX_BLOCKS) {
@@ -216,29 +303,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (blockCounter >= MAX_BLOCKS) return;
         
         blockCounter++;
-        const newBlockId = Date.now().toString(); 
         
-        const newBlock = document.createElement('div');
-        newBlock.className = 'split-block';
-        newBlock.dataset.blockId = newBlockId;
-        
-        // Added the block-amount-input field
-        newBlock.innerHTML = `
-            <div class="block-top">
-                <input type="text" class="form-control block-name-input" placeholder="Item name">
-                <input type="number" class="form-control block-amount-input" placeholder="Total $" style="width: 80px;">
-                <select class="form-control block-mode-select">
-                    <option value="shares">By Shares</option>
-                    <option value="amount">By Amount</option>
-                </select>
-                <button type="button" class="icon-btn delete-block-btn">&times;</button>
-            </div>
-            <div class="block-members"></div>
-        `;
+        // Call the new function to get the DOM element
+        const newBlock = createSplitBlock();
         
         splitBlocksWrapper.appendChild(newBlock);
         initBlock(newBlock);
         updateBlockCountUI();
+        
+        // Sync totals to maintain bidirectional flow
+        syncGlobalTotal('blocks');
     });
 
     function renderSplitMembers() {
@@ -255,7 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const myName = 'You';
 
         expenses.forEach(exp => {
-            const totalAmount = exp.amount;
+            const totalAmount = exp.totalAmount;
             const paidByMe = (exp.payer === myName) ? totalAmount : 0;
             const splitArray = exp.splitAmong || ['u1', 'u2', 'u3'];
             let myShare = 0;
@@ -280,29 +354,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resetForm() {
+        // --- 1. Basic Info Reset ---
         currentEditingId = null;
         document.getElementById('modalTitle').textContent = 'Add Expense';
         
         const deleteBtn = document.getElementById('deleteExpenseBtn');
         if (deleteBtn) deleteBtn.classList.add('hidden');
         
-        // Reset Description and Date
         document.getElementById('description').value = '';
         document.getElementById('date').value = new Date().toISOString().split('T')[0];
         
-        // Reset Payers Section
-        document.querySelectorAll('#payersList .member-item').forEach(el => {
-            el.classList.remove('selected');
-            const input = el.querySelector('.payer-amount-input');
-            if (input) {
-                input.value = '';
-                input.disabled = true;
-            }
+        // --- 2. Global State Reset (Crucial for the new architecture) ---
+        globalTotalAmount = 0;
+        payersState.forEach(p => {
+            p.amount = 0;
+            p.isManual = false;
+            p.isChecked = true; 
+            p.editTime = 0;
         });
+        
+        // --- 3. Payers UI Reset ---
+        updatePayersUI(); // Let our unified function handle the DOM inputs
         document.getElementById('payersSummary').textContent = 'Total Paid: $0.00 ▼';
         document.getElementById('payersList').classList.add('hidden');
         
-        // Reset Blocks Section
+        // --- 4. Blocks Reset ---
         const allBlocks = document.querySelectorAll('.split-block');
         allBlocks.forEach((block, index) => {
             if (index === 0) {
@@ -310,10 +386,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nameInput = block.querySelector('.block-name-input');
                 if (nameInput) nameInput.value = '';
                 
+                // Clear the block total amount
+                const amtInput = block.querySelector('.block-amount-input');
+                if (amtInput) amtInput.value = '';
+
                 const modeSelect = block.querySelector('.block-mode-select');
                 if (modeSelect) {
                     modeSelect.value = 'shares';
-                    // Trigger change event to re-render members
                     modeSelect.dispatchEvent(new Event('change')); 
                 }
             } else {
@@ -326,35 +405,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof updateBlockCountUI === 'function') {
             updateBlockCountUI();
         }
-    }
-
-    function openEditModal(exp) {
-        currentEditingId = exp.id;
-        modalTitle.textContent = 'Edit Expense';
-        deleteExpenseBtn.classList.remove('hidden');
-        
-        amountInput.value = exp.amount;
-        descInput.value = exp.description;
-        dateInput.value = exp.date;
-        
-        // Set payer dropdown
-        for(let i = 0; i < payerSelect.options.length; i++) {
-            if(payerSelect.options[i].text === exp.payer) {
-                payerSelect.selectedIndex = i;
-                break;
-            }
-        }
-        
-        // Set split members checkboxes
-        document.querySelectorAll('.member-item').forEach(el => {
-            if (exp.splitAmong && exp.splitAmong.includes(el.dataset.id)) {
-                el.classList.add('selected');
-            } else {
-                el.classList.remove('selected');
-            }
-        });
-
-        expenseModal.classList.remove('hidden');
     }
 
     // --- Payers Logic ---
@@ -662,8 +712,247 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Event Listeners ---
+    // --- UI & State Reset Helpers ---
 
+    function renderExpenseToUI(expense) {
+        const list = document.getElementById('expenseList');
+        if (!list) return;
+
+        // Remove empty state message if it exists
+        const emptyState = list.querySelector('.empty-state');
+        if (emptyState) emptyState.remove();
+
+        const li = document.createElement('li');
+        li.className = 'expense-item';
+
+        // Bind the expense ID to the list item
+        li.dataset.id = expense.id;
+
+        // Format date
+        const dateObj = new Date(expense.date);
+        const dateStr = `${dateObj.getMonth() + 1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
+
+        // Use the main title from the expense object
+        const description = expense.description || 'Untitled Item';
+        const displayAmount = (expense.totalAmount || 0).toFixed(2);
+
+        li.innerHTML = `
+            <div class="expense-details">
+                <h4>${description}</h4>
+                <div class="expense-date">${dateStr}</div>
+            </div>
+            <div class="expense-amount">$${displayAmount}</div>
+        `;
+        
+        list.appendChild(li);
+    }
+
+    function refreshExpenseListUI() {
+        const list = document.getElementById('expenseList');
+        if (!list) return;
+
+        // Clear the current list
+        list.innerHTML = '';
+
+        if (expenses.length === 0) {
+            list.innerHTML = '<div class="empty-state">No expenses yet.</div>';
+            return;
+        }
+
+        // Render each expense in the array
+        // We use a separate loop or call our existing render logic
+        expenses.forEach(exp => {
+            renderExpenseToUI(exp);
+        });
+    }
+
+    function deleteExpense(id) {
+        // 1. Double check with the user
+        if (!confirm('Are you sure you want to delete this expense?')) return;
+
+        // 2. Filter out the item from the global array
+        expenses = expenses.filter(exp => exp.id !== id);
+
+        // 3. Update UI and close modal
+        renderExpenses();
+        if (typeof updateBalanceCard === 'function') updateBalanceCard();
+        
+        closeModal();
+    }
+
+    function closeModal() {
+        const modal = document.querySelector('.modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    function resetForm() {
+        // --- 1. Basic Info Reset ---
+        currentEditingId = null;
+        document.getElementById('modalTitle').textContent = 'Add Expense';
+        
+        const deleteBtn = document.getElementById('deleteExpenseBtn');
+        if (deleteBtn) deleteBtn.classList.add('hidden');
+        
+        // Clear the main description input
+        const descInput = document.getElementById('description');
+        if (descInput) descInput.value = '';
+        
+        const dateInput = document.getElementById('date');
+        if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
+        
+        // --- 2. Global State Reset ---
+        globalTotalAmount = 0;
+        payersState.forEach(p => {
+            p.amount = 0;
+            p.isManual = false;
+            p.isChecked = true; 
+            p.editTime = 0;
+        });
+        
+        // --- 3. Payers UI Reset ---
+        updatePayersUI(); 
+        document.getElementById('payersSummary').textContent = 'Total Paid: $0.00 ▼';
+        document.getElementById('payersList').classList.add('hidden');
+        
+        // --- 4. Blocks Reset ---
+        const allBlocks = document.querySelectorAll('.split-block');
+        allBlocks.forEach((block, index) => {
+            if (index === 0) {
+                // Reset the first block to default
+                const nameInput = block.querySelector('.block-name-input');
+                if (nameInput) nameInput.value = '';
+                
+                const amtInput = block.querySelector('.block-amount-input');
+                if (amtInput) amtInput.value = '';
+
+                const modeSelect = block.querySelector('.block-mode-select');
+                if (modeSelect) {
+                    modeSelect.value = 'shares';
+                    modeSelect.dispatchEvent(new Event('change')); 
+                }
+            } else {
+                // Remove extra blocks
+                block.remove();
+            }
+        });
+        
+        blockCounter = 1;
+        if (typeof updateBlockCountUI === 'function') {
+            updateBlockCountUI();
+        }
+    }
+
+    // --- Reverse Render Logic ---
+    function openEditModal(expenseId) {
+        const expense = expenses.find(e => e.id === expenseId);
+        if (!expense) return;
+
+        console.log("Loaded Expense Data:", expense);
+        
+        currentEditingId = expenseId;
+        document.getElementById('modalTitle').textContent = 'Edit Expense';
+        
+        const deleteBtn = document.getElementById('deleteExpenseBtn');
+        if (deleteBtn) deleteBtn.classList.remove('hidden');
+
+        const descInput = document.getElementById('description');
+        if (descInput) descInput.value = expense.description;
+        
+        const dateInput = document.getElementById('date');
+        if (dateInput) dateInput.value = expense.date;
+
+        // --- 1. Restore Payers (Top Section) ---
+        globalTotalAmount = expense.totalAmount;
+        payersState.forEach(p => {
+            const savedPayer = expense.payers.find(sp => sp.id === p.id);
+            const memberEl = document.querySelector(`#payersList .member-item[data-id="${p.id}"]`);
+            const input = memberEl ? memberEl.querySelector('.payer-amount-input') : null;
+
+            if (savedPayer) {
+                p.amount = savedPayer.amount;
+                p.isManual = true; // Lock state to prevent auto-split override
+                p.isChecked = true;
+                if (memberEl) memberEl.classList.add('selected');
+                if (input) {
+                    input.value = p.amount;
+                    input.disabled = false;
+                }
+            } else {
+                p.amount = 0;
+                p.isManual = false;
+                p.isChecked = false;
+                if (memberEl) memberEl.classList.remove('selected');
+                if (input) {
+                    input.value = '';
+                    input.disabled = true;
+                }
+            }
+        });
+        updatePayersUI(); // Update total summary text
+        document.getElementById('payersSummary').textContent = `Total Paid: $${globalTotalAmount.toFixed(2)} ▼`;
+
+        // --- 2. Restore Split Blocks (Bottom Section) ---
+        const blocksWrapper = document.getElementById('splitBlocksWrapper');
+        if (blocksWrapper) {
+            blocksWrapper.innerHTML = ''; // Clear existing blocks
+            blockCounter = 0;
+
+            expense.blocks.forEach(savedBlock => {
+                const newBlock = createSplitBlock();
+                blocksWrapper.appendChild(newBlock);
+                blockCounter++;
+
+                // Fill basic info
+                const nameInput = newBlock.querySelector('.block-name-input');
+                if (nameInput) nameInput.value = savedBlock.name;
+
+                const amountInput = newBlock.querySelector('.block-amount-input');
+                if (amountInput) amountInput.value = savedBlock.total;
+
+                const modeSelect = newBlock.querySelector('.block-mode-select');
+                if (modeSelect) modeSelect.value = savedBlock.mode;
+
+                // Initialize block (binds events and generates member DOM)
+                initBlock(newBlock);
+
+                // rigger mode change to reset UI before restoring selections
+                if (modeSelect) modeSelect.dispatchEvent(new Event('change'));
+
+                // Find member items and restore checked states and values
+                const allMembersInBlock = newBlock.querySelectorAll('.member-item');
+                allMembersInBlock.forEach(memberItem => {
+                    const memberId = memberItem.dataset.id;
+                    const savedMember = savedBlock.members.find(sm => sm.id === memberId);
+
+                    if (savedMember) {
+                        memberItem.classList.add('selected'); // Check the member
+                        
+                        // If 'By Amount' mode, fill in the exact number
+                        if (savedBlock.mode === 'amount') {
+                            const valInput = memberItem.querySelector('.amount-input');
+                            if (valInput) {
+                                valInput.value = savedMember.amount;
+                                valInput.disabled = false;
+                            }
+                        }
+                    } else {
+                        memberItem.classList.remove('selected'); // Uncheck the member
+                    }
+                });
+
+                // Trigger amount calculation for 'By Shares' to re-render numbers
+                if (amountInput) amountInput.dispatchEvent(new Event('input'));
+            });
+
+            if (typeof updateBlockCountUI === 'function') updateBlockCountUI();
+        }
+
+        const modal = document.querySelector('.modal');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+
+    // --- Event Listeners ---
     addExpenseBtn.addEventListener('click', () => {
         resetForm();
         expenseModal.classList.remove('hidden');
@@ -683,47 +972,106 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     saveExpenseBtn.addEventListener('click', () => {
-        const amount = parseFloat(amountInput.value);
-        const desc = descInput.value.trim();
-        const date = dateInput.value;
-        const payerName = payerSelect.options[payerSelect.selectedIndex].text;
-        
-        if (!amount || !desc) {
-            alert('Please fill in both amount and description.');
+        // 1. Get main title and date (merged from old logic)
+        const descInput = document.getElementById('description'); 
+        const dateInput = document.getElementById('date');
+        const desc = descInput ? descInput.value.trim() : 'Untitled Item';
+        const date = dateInput && dateInput.value ? dateInput.value : new Date().toISOString().split('T')[0];
+
+        if (!desc) {
+            alert('Please fill in the description (For what).');
             return;
         }
 
-        const selectedMembers = Array.from(document.querySelectorAll('.member-item.selected'))
-                                     .map(el => el.dataset.id);
+        // 2. Calculate Total Paid
+        const totalPaid = payersState.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-        if (selectedMembers.length === 0) {
-            alert('Please select at least one person to split with.');
+        // 3. Calculate Total Split
+        let totalSplit = 0;
+        const blocksData = [];
+        const blocks = document.querySelectorAll('.split-block');
+
+        blocks.forEach(block => {
+            const mode = block.querySelector('.block-mode-select').value;
+            const blockName = block.querySelector('.block-name-input').value || 'Untitled Item';
+            const blockAmtInput = block.querySelector('.block-amount-input');
+            const blockTotal = parseFloat(blockAmtInput ? blockAmtInput.value : 0) || 0;
+            
+            totalSplit += blockTotal;
+
+            const activeMembers = Array.from(block.querySelectorAll('.member-item.selected'));
+            const membersData = activeMembers.map(item => {
+                const id = item.dataset.id;
+                let amount = 0;
+                
+                if (mode === 'shares') {
+                    const calcSpan = item.querySelector('.calculated-amount');
+                    amount = parseFloat(calcSpan.textContent.replace('$', '')) || 0;
+                } else if (mode === 'amount') {
+                    const amountInput = item.querySelector('.amount-input');
+                    amount = parseFloat(amountInput.value) || 0;
+                }
+                return { id, amount };
+            });
+
+            blocksData.push({ name: blockName, mode: mode, total: blockTotal, members: membersData });
+        });
+
+        // 4. Validation
+        if (totalPaid === 0) {
+            alert('Please enter an amount greater than 0.');
+            return;
+        }
+        if (Math.abs(totalPaid - totalSplit) > 0.05) {
+            alert(`Error: Total Paid ($${totalPaid.toFixed(2)}) does not match Total Split ($${totalSplit.toFixed(2)}).`);
             return;
         }
 
-        if (currentEditingId) {
-            // Update existing expense
-            const index = expenses.findIndex(e => e.id === currentEditingId);
-            if (index !== -1) {
-                expenses[index] = { ...expenses[index], description: desc, amount: amount, date: date, payer: payerName, splitAmong: selectedMembers };
+        // 5. Create final data object
+        const expenseData = {
+            id: currentEditingId ? currentEditingId : Date.now().toString(),
+            description: desc,
+            date: date,
+            totalAmount: totalPaid,
+            payers: payersState.filter(p => p.amount > 0).map(p => ({ id: p.id, amount: p.amount })),
+            blocks: blocksData
+        };
+
+        // 6. Save to database
+        try {
+            if (currentEditingId) {
+                const index = expenses.findIndex(e => e.id === currentEditingId);
+                if (index !== -1) {
+                    expenses[index] = expenseData;
+                }
+            } else {
+                expenses.unshift(expenseData);
             }
-        } else {
-            // Add new expense
-            const newExpense = {
-                id: 'e' + Date.now(),
-                description: desc,
-                amount: amount,
-                date: date,
-                payer: payerName,
-                splitAmong: selectedMembers
-            };
-            expenses.unshift(newExpense);
-        }
 
-        renderExpenses();
-        updateBalanceCard();
-        expenseModal.classList.add('hidden');
+            // 7. UI Refresh & Reset
+            refreshExpenseListUI(); 
+            
+            if (typeof updateBalanceCard === 'function') updateBalanceCard();
+            
+            closeModal(); 
+            resetForm();
+        } catch (err) {
+            console.error("Save failed:", err);
+            alert("An error occurred while saving. Check console.");
+        }
     });
+
+    if (expenseListContainer) {
+        expenseListContainer.addEventListener('click', (e) => {
+            // Find the closest li element
+            const expenseItem = e.target.closest('.expense-item');
+            if (!expenseItem) return;
+            
+            // Get ID and open modal
+            const expenseId = expenseItem.dataset.id;
+            openEditModal(expenseId);
+        });
+    }
 
     // --- Initialize ---
     renderSplitMembers();
